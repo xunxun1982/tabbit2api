@@ -9,18 +9,6 @@ import {
   TABBIT_EXECUTABLE,
 } from "./config.js";
 
-function isVisibleElement(element) {
-  const style = globalThis.getComputedStyle(element);
-  const rect = element.getBoundingClientRect();
-  return (
-    style.display !== "none" &&
-    style.visibility !== "hidden" &&
-    Number(style.opacity) !== 0 &&
-    rect.width > 0 &&
-    rect.height > 0
-  );
-}
-
 export async function launchTabbitSession(profileDir, options = {}) {
   const context = await chromium.launchPersistentContext(profileDir, {
     executablePath: TABBIT_EXECUTABLE,
@@ -45,6 +33,18 @@ export async function openPage(context, targetUrl) {
 
 export async function inspectInteractiveElements(page) {
   return page.evaluate(() => {
+    function isVisibleElement(element) {
+      const style = globalThis.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return (
+        style.display !== "none" &&
+        style.visibility !== "hidden" &&
+        Number(style.opacity) !== 0 &&
+        rect.width > 0 &&
+        rect.height > 0
+      );
+    }
+
     const selectors = [
       "textarea",
       "input",

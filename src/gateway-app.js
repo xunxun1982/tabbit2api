@@ -17,6 +17,7 @@ import {
 import {
   mapGatewayModelsToOpenAi,
   mapGatewayModelsToAnthropic,
+  anthropicModelFromGatewayModel,
   getAnthropicModelById,
   normalizeAnthropicRequestedModel,
   resolveAnthropicModelAlias,
@@ -147,7 +148,11 @@ function writeNotFound(res, message = "Resource was not found.") {
 }
 
 async function handleModelById(_req, res, deps, modelId) {
-  const model = getAnthropicModelById(modelId);
+  const models = await deps.getGatewayModelCatalog();
+  const gatewayModel = models.find((candidate) => candidate.id === modelId);
+  const model = gatewayModel
+    ? anthropicModelFromGatewayModel(gatewayModel)
+    : getAnthropicModelById(modelId);
   if (!model) {
     writeAnthropicError(
       res,
@@ -158,7 +163,6 @@ async function handleModelById(_req, res, deps, modelId) {
     return;
   }
 
-  await deps.getGatewayModelCatalog();
   writeJson(res, 200, model);
 }
 

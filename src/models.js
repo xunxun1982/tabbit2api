@@ -32,6 +32,15 @@ function anthropicModelFromAlias(alias) {
   };
 }
 
+export function anthropicModelFromGatewayModel(model) {
+  return {
+    type: "model",
+    id: model.id,
+    display_name: model.displayName || model.id,
+    created_at: "2025-01-01T00:00:00Z",
+  };
+}
+
 export function mapGatewayModelsToOpenAi(models) {
   return {
     object: "list",
@@ -53,13 +62,13 @@ export function mapGatewayModelsToOpenAi(models) {
   };
 }
 
-export function mapGatewayModelsToAnthropic(_models) {
+export function mapGatewayModelsToAnthropic(models) {
+  const data = models.map(anthropicModelFromGatewayModel);
   return {
-    data: ANTHROPIC_MODEL_ALIASES.map(anthropicModelFromAlias),
+    data,
     has_more: false,
-    first_id: ANTHROPIC_MODEL_ALIASES[0]?.id || null,
-    last_id:
-      ANTHROPIC_MODEL_ALIASES[ANTHROPIC_MODEL_ALIASES.length - 1]?.id || null,
+    first_id: data[0]?.id || null,
+    last_id: data[data.length - 1]?.id || null,
   };
 }
 

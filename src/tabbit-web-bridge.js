@@ -89,6 +89,50 @@ function randomReferenceId() {
   return `${Date.now() + Math.floor(Math.random() * 1_000_000)}`;
 }
 
+export function findRuntimeExport(runtime, matcher) {
+  const moduleIds =
+    runtime?.m && typeof runtime.m === "object" ? Object.keys(runtime.m) : [];
+  for (const id of moduleIds) {
+    try {
+      const moduleExports = runtime(id);
+      const value = matcher(moduleExports);
+      if (value) {
+        return value;
+      }
+    } catch {}
+  }
+
+  return null;
+}
+
+export function findTabbitSendMessage(runtime) {
+  return findRuntimeExport(runtime, (moduleExports) => {
+    const sendMessage = moduleExports?._;
+    if (typeof sendMessage !== "function") {
+      return null;
+    }
+
+    const source = Function.prototype.toString.call(sendMessage);
+    const markers = [
+      "messageId",
+      "selectedModels",
+      "useDirectApi",
+      "setMessages",
+      "stopGenerating",
+    ];
+    return markers.every((marker) => source.includes(marker))
+      ? sendMessage
+      : null;
+  });
+}
+
+export function findTabbitModes(runtime) {
+  return findRuntimeExport(runtime, (moduleExports) => {
+    const modes = moduleExports?.R7;
+    return modes?.ASK === "ask" ? modes : null;
+  });
+}
+
 export function attachmentUploadResultToReference(attachment, uploadResult) {
   const fileId = cleanText(
     uploadResult?.fileId ||
@@ -213,6 +257,11 @@ async function sendUsingPageModule(
   { prompt, selectedModel, timeoutMs, models, onDelta, attachments = [] },
 ) {
   const streamId = `tabbit-stream-${Date.now()}-${++streamSequence}`;
+  const runtimeHelperSources = {
+    findRuntimeExport: findRuntimeExport.toString(),
+    findTabbitSendMessage: findTabbitSendMessage.toString(),
+    findTabbitModes: findTabbitModes.toString(),
+  };
   if (onDelta) {
     await page.exposeFunction(streamId, (payload) => {
       if (payload && typeof payload.delta === "string" && payload.delta) {
@@ -230,6 +279,7 @@ async function sendUsingPageModule(
       models,
       streamBridgeName,
       attachments,
+      runtimeHelperSources,
       }) => {
       function captureWebpackRequire() {
         let runtime = null;
@@ -558,9 +608,26 @@ async function sendUsingPageModule(
         });
       }
 
+      const findRuntimeExport = new Function(
+        `return (${runtimeHelperSources.findRuntimeExport});`,
+      )();
+      const findTabbitSendMessage = new Function(
+        "findRuntimeExport",
+        `return (${runtimeHelperSources.findTabbitSendMessage});`,
+      )(findRuntimeExport);
+      const findTabbitModes = new Function(
+        "findRuntimeExport",
+        `return (${runtimeHelperSources.findTabbitModes});`,
+      )(findRuntimeExport);
       const runtime = captureWebpackRequire();
-      const sendMessage = runtime(51523)._;
-      const modes = runtime(96164).R7;
+      const sendMessage = findTabbitSendMessage(runtime);
+      const modes = findTabbitModes(runtime);
+      if (typeof sendMessage !== "function") {
+        throw new Error("Unable to find Tabbit send function in current runtime.");
+      }
+      if (!modes?.ASK) {
+        throw new Error("Unable to find Tabbit mode enum in current runtime.");
+      }
 
       const state = {
         messages: [],
@@ -777,6 +844,7 @@ async function sendUsingPageModule(
         models,
         streamBridgeName: streamId,
         attachments,
+        runtimeHelperSources,
       },
     );
   } catch (error) {

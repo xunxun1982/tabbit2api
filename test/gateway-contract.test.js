@@ -23,6 +23,8 @@ import { normalizeChatCompletionsRequest } from "../src/openai-chat.js";
 import {
   attachmentUploadResultToReference,
   classifyAttemptFailure,
+  findTabbitModes,
+  findTabbitSendMessage,
 } from "../src/tabbit-web-bridge.js";
 import {
   buildGatewayCatalogBundle,
@@ -269,6 +271,10 @@ test("GET /v1/models returns Anthropic shape with anthropic headers", async () =
     assert.equal(response.status, 200);
     assert.equal(Array.isArray(body.data), true);
     assert.equal(body.data[0].type, "model");
+    assert.deepEqual(
+      body.data.map((model) => model.id),
+      ["tabbit/Claude-Sonnet-4.6", "tabbit/priority"],
+    );
   } finally {
     await stopServer(server);
   }
@@ -307,6 +313,27 @@ test("GET /v1/models/{id} returns Anthropic model details", async () => {
 
     assert.equal(response.status, 200);
     assert.equal(body.id, "tabbit/priority");
+  } finally {
+    await stopServer(server);
+  }
+});
+
+test("GET /v1/models/{id} returns Anthropic details for gateway models", async () => {
+  const { server, baseUrl } = await startServer();
+  try {
+    const { response, body } = await requestJson(
+      `${baseUrl}/v1/models/tabbit%2FClaude-Sonnet-4.6`,
+      {
+        headers: {
+          "x-api-key": "test-key",
+          "anthropic-version": "2023-06-01",
+        },
+      },
+    );
+
+    assert.equal(response.status, 200);
+    assert.equal(body.id, "tabbit/Claude-Sonnet-4.6");
+    assert.equal(body.display_name, "Claude-Sonnet-4.6");
   } finally {
     await stopServer(server);
   }
@@ -1919,6 +1946,38 @@ test("bridge maps uploaded image and document attachments to Tabbit references",
   assert.equal(documentReference.title, "paper.pdf");
   assert.equal(documentReference.content, "");
   assert.equal(documentReference.path, "file-doc");
+});
+
+test("bridge discovers Tabbit runtime exports when Webpack module ids change", () => {
+  const sendMessage = function F({
+    messageId,
+    selectedModels,
+    useDirectApi,
+    setMessages,
+    stopGenerating,
+  }) {
+    return {
+      messageId,
+      selectedModels,
+      useDirectApi,
+      setMessages,
+      stopGenerating,
+    };
+  };
+  const modes = {
+    ASK: "ask",
+    AGENT: "agent",
+    MULTI_MODEL: "multi_model",
+  };
+  const moduleFactories = {
+    32386: () => ({ R7: modes }),
+    77383: () => ({ _: sendMessage }),
+  };
+  const runtime = (id) => moduleFactories[id]();
+  runtime.m = moduleFactories;
+
+  assert.equal(findTabbitSendMessage(runtime), sendMessage);
+  assert.equal(findTabbitModes(runtime), modes);
 });
 
 test("executeServerToolUse handles unsupported tools explicitly", async () => {
